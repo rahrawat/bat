@@ -11,6 +11,9 @@ matrix:
       env:
         - TARGET=x86_64-unknown-linux-musl
         - CC_x86_64_unknown_linux_musl=/usr/bin/musl-gcc
+    - os: linux
+      rust: stable
+      env: TARGET=i686-unknown-linux-gnu
     - os: osx
       rust: stable
       env: TARGET=x86_64-apple-darwin
@@ -27,6 +30,14 @@ matrix:
     - os: osx
       rust: 1.24.0
       env: TARGET=x86_64-apple-darwin
+
+    # Code formatting check
+    - os: linux
+      rust: nightly
+      # skip the global install step
+      install:
+        - cargo install --debug --force rustfmt-nightly
+      script: cargo fmt -- --check
 
 addons:
   apt:
@@ -55,8 +66,7 @@ script:
   - cargo build --target $TARGET --verbose
   - cargo test --target $TARGET --verbose
   # Run 'bat' on its own source code and the README
-  - cargo run --target $TARGET -- src/main.rs
-  - cargo run --target $TARGET -- README.md
+  - cargo run --target $TARGET -- src/main.rs README.md --paging=never
 
 before_deploy:
   - bash ci/before_deploy.bash

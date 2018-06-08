@@ -1,0 +1,42 @@
+[submodule "assets/syntaxes/Elixir"]
+	path = assets/syntaxes/Elixir
+	url = https://github.com/princemaple/elixir-sublime-syntax/
+[submodule "assets/syntaxes/Packages"]
+	path = assets/syntaxes/Packages
+	url = https://github.com/sublimehq/Packages/
+[submodule "assets/syntaxes/TOML"]
+	path = assets/syntaxes/TOML
+	url = https://github.com/sharkdp/sublime_toml_highlighting
+[submodule "assets/syntaxes/Julia"]
+	path = assets/syntaxes/Julia
+	url = https://github.com/JuliaEditorSupport/Julia-sublime
+[submodule "assets/themes/sublime-monokai-extended"]
+	path = assets/themes/sublime-monokai-extended
+	url = https://github.com/jonschlinkert/sublime-monokai-extended
+[submodule "assets/syntaxes/Docker"]
+	path = assets/syntaxes/Docker
+	url = https://github.com/asbjornenge/Docker.tmbundle
+[submodule "assets/syntaxes/VimL"]
+	path = assets/syntaxes/VimL
+	url = https://github.com/SalGnt/Sublime-VimL
+[submodule "assets/syntaxes/INI"]
+	path = assets/syntaxes/INI
+	url = https://github.com/clintberry/sublime-text-2-ini
+[submodule "assets/syntaxes/CMake"]
+	path = assets/syntaxes/CMake
+	url = https://github.com/sharkdp/Sublime-CMakeLists
+[submodule "assets/syntaxes/LESS"]
+	path = assets/syntaxes/LESS
+	url = https://github.com/danro/LESS-sublime
+[submodule "assets/themes/DarkNeon"]
+	path = assets/themes/DarkNeon
+	url = https://github.com/RainyDayMedia/DarkNeon
+[submodule "assets/themes/github-sublime-theme"]
+	path = assets/themes/github-sublime-theme
+	url = https://github.com/AlexanderEkdahl/github-sublime-theme
+[submodule "assets/themes/1337-Scheme"]
+	path = assets/themes/1337-Scheme
+	url = https://github.com/MarkMichos/1337-Scheme
+[submodule "assets/themes/TwoDark"]
+	path = assets/themes/TwoDark
+	url = https://github.com/erremauro/TwoDark
