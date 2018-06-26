@@ -142,6 +142,20 @@ impl App {
                     ),
             )
             .arg(
+                Arg::with_name("line-range")
+                    .long("line-range")
+                    .overrides_with("line-range")
+                    .takes_value(true)
+                    .value_name("n:m")
+                    .help("Only print the lines from n to m")
+                    .long_help(
+                        "Print a specified range or ranges of lines from the files. \
+                         For example: '--line-range 30:40' will print lines 30 to 40 \n\
+                         '--line-range :40' will print lines 1 to 40 \n\
+                         '--line-range 40:' will print lines 40 to the end of the file",
+                    ),
+            )
+            .arg(
                 Arg::with_name("list-themes")
                     .long("list-themes")
                     .help("Displays supported themes")
@@ -269,6 +283,7 @@ impl App {
             term_width: Term::stdout().size().1 as usize,
             files,
             theme: self.matches.value_of("theme"),
+            line_range: transpose(self.matches.value_of("line-range").map(LineRange::from))?,
         })
     }
 
@@ -322,10 +337,86 @@ pub struct Config<'a> {
     pub term_width: usize,
     pub files: Vec<Option<&'a str>>,
     pub theme: Option<&'a str>,
+    pub line_range: Option<LineRange>,
 }
 
 fn is_truecolor_terminal() -> bool {
     env::var("COLORTERM")
         .map(|colorterm| colorterm == "truecolor" || colorterm == "24bit")
         .unwrap_or(false)
+}
+
+pub struct LineRange {
+    pub lower: usize,
+    pub upper: usize,
+}
+
+impl LineRange {
+    pub fn from(range_raw: &str) -> Result<LineRange> {
+        LineRange::parse_range(range_raw)
+    }
+
+    pub fn new() -> LineRange {
+        LineRange {
+            lower: usize::min_value(),
+            upper: usize::max_value(),
+        }
+    }
+
+    pub fn parse_range(range_raw: &str) -> Result<LineRange> {
+        let mut new_range = LineRange::new();
+
+        if range_raw.bytes().nth(0).ok_or("Empty line range")? == b':' {
+            new_range.upper = range_raw[1..].parse()?;
+            return Ok(new_range);
+        } else if range_raw.bytes().last().ok_or("Empty line range")? == b':' {
+            new_range.lower = range_raw[..range_raw.len() - 1].parse()?;
+            return Ok(new_range);
+        }
+
+        let line_numbers: Vec<&str> = range_raw.split(':').collect();
+        if line_numbers.len() == 2 {
+            new_range.lower = line_numbers[0].parse()?;
+            new_range.upper = line_numbers[1].parse()?;
+            return Ok(new_range);
+        }
+        Err("expected single ':' character".into())
+    }
+}
+
+#[test]
+fn test_parse_line_range_full() {
+    let range = LineRange::from("40:50").expect("Shouldn't fail on test!");
+    assert_eq!(40, range.lower);
+    assert_eq!(50, range.upper);
+}
+
+#[test]
+fn test_parse_line_range_partial_min() {
+    let range = LineRange::from(":50").expect("Shouldn't fail on test!");
+    assert_eq!(usize::min_value(), range.lower);
+    assert_eq!(50, range.upper);
+}
+
+#[test]
+fn test_parse_line_range_partial_max() {
+    let range = LineRange::from("40:").expect("Shouldn't fail on test!");
+    assert_eq!(40, range.lower);
+    assert_eq!(usize::max_value(), range.upper);
+}
+
+#[test]
+fn test_parse_line_range_fail() {
+    let range = LineRange::from("40:50:80");
+    assert!(range.is_err());
+    let range = LineRange::from("40::80");
+    assert!(range.is_err());
+    let range = LineRange::from(":40:");
+    assert!(range.is_err());
+    let range = LineRange::from("40");
+    assert!(range.is_err());
+}
+
+fn transpose<T>(opt: Option<Result<T>>) -> Result<Option<T>> {
+    opt.map_or(Ok(None), |res| res.map(Some))
 }

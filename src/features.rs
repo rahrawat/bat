@@ -1,5 +1,5 @@
 use ansi_term::Colour::Green;
-use app::Config;
+use app::{Config, LineRange};
 use assets::HighlightingAssets;
 use diff::get_git_diff;
 use errors::*;
@@ -85,28 +85,52 @@ fn print_file(
     filename: Option<&str>,
 ) -> Result<()> {
     let stdin = io::stdin(); // TODO: this is not always needed
+    {
+        let reader: Box<BufRead> = match filename {
+            None => Box::new(stdin.lock()),
+            Some(filename) => Box::new(BufReader::new(File::open(filename)?)),
+        };
 
-    let mut reader: Box<BufRead> = match filename {
-        None => Box::new(stdin.lock()),
-        Some(filename) => Box::new(BufReader::new(File::open(filename)?)),
-    };
+        let highlighter = HighlightLines::new(syntax, theme);
 
-    let mut highlighter = HighlightLines::new(syntax, theme);
+        printer.print_header(filename)?;
+        print_file_ranges(printer, reader, highlighter, &printer.config.line_range)?;
+        printer.print_footer()?;
+    }
+    Ok(())
+}
 
-    printer.print_header(filename)?;
-
+fn print_file_ranges<'a>(
+    printer: &mut Printer,
+    mut reader: Box<BufRead + 'a>,
+    mut highlighter: HighlightLines,
+    line_ranges: &Option<LineRange>,
+) -> Result<()> {
     let mut buffer = Vec::new();
+
     while reader.read_until(b'\n', &mut buffer)? > 0 {
         {
             let line = String::from_utf8_lossy(&buffer);
             let regions = highlighter.highlight(line.as_ref());
 
-            printer.print_line(&regions)?;
+            match line_ranges {
+                &Some(ref range) => {
+                    if printer.line_number + 1 < range.lower {
+                        // skip line
+                        printer.line_number += 1;
+                    } else if printer.line_number >= range.upper {
+                        // no more lines in range
+                        break;
+                    } else {
+                        printer.print_line(&regions)?;
+                    }
+                }
+                &None => {
+                    printer.print_line(&regions)?;
+                }
+            }
         }
         buffer.clear();
     }
-
-    printer.print_footer()?;
-
     Ok(())
 }
