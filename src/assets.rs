@@ -1,19 +1,20 @@
-use directories::ProjectDirs;
-use errors::*;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
+
 use syntect::dumps::{dump_to_file, from_binary, from_reader};
 use syntect::highlighting::{Theme, ThemeSet};
-use syntect::parsing::{SyntaxDefinition, SyntaxSet};
+use syntect::parsing::{SyntaxReference, SyntaxSet, SyntaxSetBuilder};
 
-#[cfg(unix)]
-use std::os::unix::fs::FileTypeExt;
+use dirs::PROJECT_DIRS;
 
-lazy_static! {
-    static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("", "", crate_name!());
-}
+use errors::*;
+use inputfile::{InputFile, InputFileReader};
+use syntax_mapping::SyntaxMapping;
+
+pub const BAT_THEME_DEFAULT: &str = "Monokai Extended";
 
 pub struct HighlightingAssets {
     pub syntax_set: SyntaxSet,
@@ -25,29 +26,47 @@ impl HighlightingAssets {
         Self::from_cache().unwrap_or_else(|_| Self::from_binary())
     }
 
-    pub fn from_files(dir: Option<&Path>) -> Result<Self> {
+    pub fn from_files(dir: Option<&Path>, start_empty: bool) -> Result<Self> {
         let source_dir = dir.unwrap_or_else(|| PROJECT_DIRS.config_dir());
 
+        let mut theme_set = if start_empty {
+            ThemeSet {
+                themes: BTreeMap::new(),
+            }
+        } else {
+            Self::get_integrated_themeset()
+        };
+
         let theme_dir = source_dir.join("themes");
-        let theme_set = ThemeSet::load_from_folder(&theme_dir).chain_err(|| {
-            format!(
-                "Could not load themes from '{}'",
+
+        let res = theme_set.add_from_folder(&theme_dir);
+        if !res.is_ok() {
+            println!(
+                "No themes were found in '{}', using the default set",
                 theme_dir.to_string_lossy()
-            )
-        })?;
-        let mut syntax_set = SyntaxSet::new();
-        let syntax_dir = source_dir.join("syntaxes");
-        if !syntax_dir.exists() {
-            return Err(format!(
-                "Could not load syntaxes from '{}'",
-                syntax_dir.to_string_lossy()
-            ).into());
+            );
         }
-        syntax_set.load_syntaxes(syntax_dir, true)?;
-        syntax_set.load_plain_text_syntax();
+
+        let mut syntax_set_builder = if start_empty {
+            let mut builder = SyntaxSetBuilder::new();
+            builder.add_plain_text_syntax();
+            builder
+        } else {
+            Self::get_integrated_syntaxset().into_builder()
+        };
+
+        let syntax_dir = source_dir.join("syntaxes");
+        if syntax_dir.exists() {
+            syntax_set_builder.add_from_folder(syntax_dir, true)?;
+        } else {
+            println!(
+                "No syntaxes were found in '{}', using the default set.",
+                syntax_dir.to_string_lossy()
+            );
+        }
 
         Ok(HighlightingAssets {
-            syntax_set,
+            syntax_set: syntax_set_builder.build(),
             theme_set,
         })
     }
@@ -60,9 +79,8 @@ impl HighlightingAssets {
                 syntax_set_path().to_string_lossy()
             )
         })?;
-        let mut syntax_set: SyntaxSet =
-            from_reader(syntax_set_file).chain_err(|| "Could not parse cached syntax set")?;
-        syntax_set.link_syntaxes();
+        let syntax_set: SyntaxSet = from_reader(BufReader::new(syntax_set_file))
+            .chain_err(|| "Could not parse cached syntax set")?;
 
         let theme_set_file = File::open(&theme_set_path).chain_err(|| {
             format!(
@@ -70,8 +88,8 @@ impl HighlightingAssets {
                 theme_set_path.to_string_lossy()
             )
         })?;
-        let theme_set: ThemeSet =
-            from_reader(theme_set_file).chain_err(|| "Could not parse cached theme set")?;
+        let theme_set: ThemeSet = from_reader(BufReader::new(theme_set_file))
+            .chain_err(|| "Could not parse cached theme set")?;
 
         Ok(HighlightingAssets {
             syntax_set,
@@ -79,10 +97,17 @@ impl HighlightingAssets {
         })
     }
 
+    fn get_integrated_syntaxset() -> SyntaxSet {
+        from_binary(include_bytes!("../assets/syntaxes.bin"))
+    }
+
+    fn get_integrated_themeset() -> ThemeSet {
+        from_binary(include_bytes!("../assets/themes.bin"))
+    }
+
     fn from_binary() -> Self {
-        let mut syntax_set: SyntaxSet = from_binary(include_bytes!("../assets/syntaxes.bin"));
-        syntax_set.link_syntaxes();
-        let theme_set: ThemeSet = from_binary(include_bytes!("../assets/themes.bin"));
+        let syntax_set = Self::get_integrated_syntaxset();
+        let theme_set = Self::get_integrated_themeset();
 
         HighlightingAssets {
             syntax_set,
@@ -123,38 +148,56 @@ impl HighlightingAssets {
         Ok(())
     }
 
-    pub fn get_theme(&self, theme: &str) -> Result<&Theme> {
-        Ok(self.theme_set.themes.get(theme).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Could not find '{}' theme", theme),
-            )
-        })?)
+    pub fn get_theme(&self, theme: &str) -> &Theme {
+        match self.theme_set.themes.get(theme) {
+            Some(theme) => theme,
+            None => {
+                use ansi_term::Colour::Yellow;
+                eprintln!(
+                    "{}: Unknown theme '{}', using default.",
+                    Yellow.paint("[bat warning]"),
+                    theme
+                );
+                &self.theme_set.themes[BAT_THEME_DEFAULT]
+            }
+        }
     }
 
-    pub fn get_syntax(&self, language: Option<&str>, filename: Option<&str>) -> &SyntaxDefinition {
+    pub fn get_syntax(
+        &self,
+        language: Option<&str>,
+        filename: InputFile,
+        reader: &mut InputFileReader,
+        mapping: &SyntaxMapping,
+    ) -> &SyntaxReference {
         let syntax = match (language, filename) {
             (Some(language), _) => self.syntax_set.find_syntax_by_token(language),
-            (None, Some(filename)) => {
-                #[cfg(not(unix))]
-                let may_read_from_file = true;
+            (None, InputFile::Ordinary(filename)) => {
+                let path = Path::new(filename);
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let extension = path.extension().and_then(|x| x.to_str()).unwrap_or("");
 
-                // Do not peek at the file (to determine the syntax) if it is a FIFO because they can
-                // only be read once.
-                #[cfg(unix)]
-                let may_read_from_file = !fs::metadata(filename)
-                    .map(|m| m.file_type().is_fifo())
-                    .unwrap_or(false);
+                let file_name = mapping.replace(file_name);
+                let extension = mapping.replace(extension);
 
-                if may_read_from_file {
-                    self.syntax_set
-                        .find_syntax_for_file(filename)
-                        .unwrap_or(None)
+                let ext_syntax = self
+                    .syntax_set
+                    .find_syntax_by_extension(&file_name)
+                    .or_else(|| self.syntax_set.find_syntax_by_extension(&extension));
+                let line_syntax = if ext_syntax.is_none() {
+                    String::from_utf8(reader.first_line.clone())
+                        .ok()
+                        .and_then(|l| self.syntax_set.find_syntax_by_first_line(&l))
                 } else {
                     None
-                }
+                };
+                let syntax = ext_syntax.or(line_syntax);
+                syntax
             }
-            (None, None) => None,
+            (None, InputFile::StdIn) => String::from_utf8(reader.first_line.clone())
+                .ok()
+                .and_then(|l| self.syntax_set.find_syntax_by_first_line(&l)),
+            (_, InputFile::ThemePreviewFile) => self.syntax_set.find_syntax_by_name("Rust"),
         };
 
         syntax.unwrap_or_else(|| self.syntax_set.find_syntax_plain_text())

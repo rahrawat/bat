@@ -1,6 +1,7 @@
-use errors::*;
 use std::collections::HashSet;
 use std::str::FromStr;
+
+use errors::*;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum OutputComponent {
@@ -22,11 +23,13 @@ pub enum OutputWrap {
 impl OutputComponent {
     pub fn components(&self, interactive_terminal: bool) -> &'static [OutputComponent] {
         match *self {
-            OutputComponent::Auto => if interactive_terminal {
-                OutputComponent::Full.components(interactive_terminal)
-            } else {
-                OutputComponent::Plain.components(interactive_terminal)
-            },
+            OutputComponent::Auto => {
+                if interactive_terminal {
+                    OutputComponent::Full.components(interactive_terminal)
+                } else {
+                    OutputComponent::Plain.components(interactive_terminal)
+                }
+            }
             OutputComponent::Changes => &[OutputComponent::Changes],
             OutputComponent::Grid => &[OutputComponent::Grid],
             OutputComponent::Header => &[OutputComponent::Header],
@@ -53,11 +56,13 @@ impl FromStr for OutputComponent {
             "header" => Ok(OutputComponent::Header),
             "numbers" => Ok(OutputComponent::Numbers),
             "full" => Ok(OutputComponent::Full),
-            "plain" | _ => Ok(OutputComponent::Plain),
+            "plain" => Ok(OutputComponent::Plain),
+            _ => Err(format!("Unknown style '{}'", s).into()),
         }
     }
 }
 
+#[derive(Clone)]
 pub struct OutputComponents(pub HashSet<OutputComponent>);
 
 impl OutputComponents {
@@ -75,5 +80,9 @@ impl OutputComponents {
 
     pub fn numbers(&self) -> bool {
         self.0.contains(&OutputComponent::Numbers)
+    }
+
+    pub fn plain(&self) -> bool {
+        self.0.iter().all(|c| c == &OutputComponent::Plain)
     }
 }

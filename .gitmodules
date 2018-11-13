@@ -6,7 +6,7 @@
 	url = https://github.com/sublimehq/Packages/
 [submodule "assets/syntaxes/TOML"]
 	path = assets/syntaxes/TOML
-	url = https://github.com/sharkdp/sublime_toml_highlighting
+	url = https://github.com/jasonwilliams/sublime_toml_highlighting
 [submodule "assets/syntaxes/Julia"]
 	path = assets/syntaxes/Julia
 	url = https://github.com/JuliaEditorSupport/Julia-sublime
@@ -24,7 +24,7 @@
 	url = https://github.com/clintberry/sublime-text-2-ini
 [submodule "assets/syntaxes/CMake"]
 	path = assets/syntaxes/CMake
-	url = https://github.com/sharkdp/Sublime-CMakeLists
+	url = https://github.com/zyxar/Sublime-CMakeLists
 [submodule "assets/syntaxes/LESS"]
 	path = assets/syntaxes/LESS
 	url = https://github.com/danro/LESS-sublime
@@ -43,3 +43,57 @@
 [submodule "assets/syntaxes/AWK"]
 	path = assets/syntaxes/AWK
 	url = https://github.com/JohnNilsson/awk-sublime
+[submodule "assets/syntaxes/Nix"]
+	path = assets/syntaxes/Nix
+	url = https://github.com/wmertens/sublime-nix
+[submodule "assets/themes/zenburn"]
+	path = assets/themes/zenburn
+	url = https://github.com/colinta/zenburn.git
+[submodule "assets/syntaxes/Kotlin"]
+	path = assets/syntaxes/Kotlin
+	url = https://github.com/vkostyukov/kotlin-sublime-package
+[submodule "assets/syntaxes/Elm"]
+	path = assets/syntaxes/Elm
+	url = https://github.com/elm-community/SublimeElmLanguageSupport
+[submodule "assets/syntaxes/TypeScript"]
+	path = assets/syntaxes/TypeScript
+	url = https://github.com/Microsoft/TypeScript-Sublime-Plugin
+[submodule "assets/syntaxes/Puppet"]
+	path = assets/syntaxes/Puppet
+	url = https://github.com/russCloak/SublimePuppet
+[submodule "assets/syntaxes/CSV"]
+	path = assets/syntaxes/CSV
+	url = https://github.com/wadetb/Sublime-Text-Advanced-CSV
+[submodule "assets/themes/onehalf"]
+	path = assets/themes/onehalf
+	url = https://github.com/sonph/onehalf
+[submodule "assets/syntaxes/JavaScript (Babel)"]
+	path = assets/syntaxes/JavaScript (Babel)
+	url = https://github.com/babel/babel-sublime
+[submodule "assets/syntaxes/Cabal"]
+	path = assets/syntaxes/Cabal
+	url = https://github.com/SublimeHaskell/SublimeHaskell
+[submodule "assets/syntaxes/Dart"]
+	path = assets/syntaxes/Dart
+	url = https://github.com/guillermooo/dart-sublime-bundle
+[submodule "assets/syntaxes/FSharp"]
+	path = assets/syntaxes/FSharp
+	url = https://github.com/hoest/sublimetext-fsharp
+[submodule "assets/syntaxes/PureScript"]
+	path = assets/syntaxes/PureScript
+	url = https://github.com/tellnobody1/sublime-purescript-syntax
+[submodule "assets/syntaxes/Swift"]
+	path = assets/syntaxes/Swift
+	url = https://github.com/quiqueg/Swift-Sublime-Package
+[submodule "assets/syntaxes/Crystal"]
+	path = assets/syntaxes/Crystal
+	url = https://github.com/crystal-lang-tools/sublime-crystal.git
+[submodule "assets/syntaxes/PowerShell"]
+	path = assets/syntaxes/PowerShell
+	url = https://github.com/PowerShell/EditorSyntax
+[submodule "assets/syntaxes/Robot"]
+	path = assets/syntaxes/Robot
+	url = https://github.com/andriyko/sublime-robot-framework-assistant.git
+[submodule "assets/themes/sublime-snazzy"]
+	path = assets/themes/sublime-snazzy
+	url = https://github.com/greggb/sublime-snazzy

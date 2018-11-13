@@ -1,37 +1,103 @@
-use ansi_term::Colour::{Fixed, Green, Red, White, Yellow};
-use ansi_term::Style;
-use app::Config;
-use console::AnsiCodeIterator;
-use decorations::{Decoration, GridBorderDecoration, LineChangesDecoration, LineNumberDecoration};
-use diff::LineChanges;
-use errors::*;
-use std::boxed::Box;
 use std::io::Write;
 use std::vec::Vec;
-use style::OutputWrap;
-use syntect::highlighting;
-use terminal::as_terminal_escaped;
 
-pub struct Printer<'a> {
-    handle: &'a mut Write,
-    colors: Colors,
-    pub config: &'a Config<'a>,
-    decorations: Vec<Box<Decoration>>,
-    panel_width: usize,
-    pub line_number: usize,
-    pub line_changes: Option<LineChanges>,
+use ansi_term::Colour::{Fixed, Green, Red, Yellow};
+use ansi_term::Style;
+
+use console::AnsiCodeIterator;
+
+use syntect::easy::HighlightLines;
+use syntect::highlighting::Theme;
+use syntect::parsing::SyntaxSet;
+
+use content_inspector::ContentType;
+
+use encoding::all::{UTF_16BE, UTF_16LE};
+use encoding::{DecoderTrap, Encoding};
+
+use app::Config;
+use assets::HighlightingAssets;
+use decorations::{Decoration, GridBorderDecoration, LineChangesDecoration, LineNumberDecoration};
+use diff::get_git_diff;
+use diff::LineChanges;
+use errors::*;
+use inputfile::{InputFile, InputFileReader};
+use preprocessor::{expand_tabs, replace_nonprintable};
+use style::OutputWrap;
+use terminal::{as_terminal_escaped, to_ansi_color};
+
+pub trait Printer {
+    fn print_header(&mut self, handle: &mut Write, file: InputFile) -> Result<()>;
+    fn print_footer(&mut self, handle: &mut Write) -> Result<()>;
+    fn print_line(
+        &mut self,
+        out_of_range: bool,
+        handle: &mut Write,
+        line_number: usize,
+        line_buffer: &[u8],
+    ) -> Result<()>;
 }
 
-impl<'a> Printer<'a> {
-    pub fn new(handle: &'a mut Write, config: &'a Config) -> Self {
+pub struct SimplePrinter;
+
+impl SimplePrinter {
+    pub fn new() -> Self {
+        SimplePrinter {}
+    }
+}
+
+impl Printer for SimplePrinter {
+    fn print_header(&mut self, _handle: &mut Write, _file: InputFile) -> Result<()> {
+        Ok(())
+    }
+
+    fn print_footer(&mut self, _handle: &mut Write) -> Result<()> {
+        Ok(())
+    }
+
+    fn print_line(
+        &mut self,
+        out_of_range: bool,
+        handle: &mut Write,
+        _line_number: usize,
+        line_buffer: &[u8],
+    ) -> Result<()> {
+        if !out_of_range {
+            handle.write(line_buffer)?;
+        }
+        Ok(())
+    }
+}
+
+pub struct InteractivePrinter<'a> {
+    colors: Colors,
+    config: &'a Config<'a>,
+    decorations: Vec<Box<dyn Decoration>>,
+    panel_width: usize,
+    ansi_prefix_sgr: String,
+    content_type: ContentType,
+    pub line_changes: Option<LineChanges>,
+    highlighter: Option<HighlightLines<'a>>,
+    syntax_set: &'a SyntaxSet,
+}
+
+impl<'a> InteractivePrinter<'a> {
+    pub fn new(
+        config: &'a Config,
+        assets: &'a HighlightingAssets,
+        file: InputFile,
+        reader: &mut InputFileReader,
+    ) -> Self {
+        let theme = assets.get_theme(&config.theme);
+
         let colors = if config.colored_output {
-            Colors::colored()
+            Colors::colored(theme, config.true_color)
         } else {
             Colors::plain()
         };
 
         // Create decorations.
-        let mut decorations: Vec<Box<Decoration>> = Vec::new();
+        let mut decorations: Vec<Box<dyn Decoration>> = Vec::new();
 
         if config.output_components.numbers() {
             decorations.push(Box::new(LineNumberDecoration::new(&colors)));
@@ -60,30 +126,75 @@ impl<'a> Printer<'a> {
             panel_width = 0;
         }
 
-        // Create printer.
-        Printer {
+        let mut line_changes = None;
+
+        let highlighter = if reader.content_type.is_binary() {
+            None
+        } else {
+            // Get the Git modifications
+            line_changes = if config.output_components.changes() {
+                match file {
+                    InputFile::Ordinary(filename) => get_git_diff(filename),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            // Determine the type of syntax for highlighting
+            let syntax = assets.get_syntax(config.language, file, reader, &config.syntax_mapping);
+            Some(HighlightLines::new(syntax, theme))
+        };
+
+        InteractivePrinter {
             panel_width,
-            handle,
             colors,
             config,
             decorations,
-            line_number: 0,
-            line_changes: None,
+            content_type: reader.content_type,
+            ansi_prefix_sgr: String::new(),
+            line_changes,
+            highlighter,
+            syntax_set: &assets.syntax_set,
         }
     }
 
-    pub fn print_header(&mut self, filename: Option<&str>) -> Result<()> {
-        self.line_number = 0;
+    fn print_horizontal_line(&mut self, handle: &mut Write, grid_char: char) -> Result<()> {
+        if self.panel_width == 0 {
+            writeln!(
+                handle,
+                "{}",
+                self.colors.grid.paint("─".repeat(self.config.term_width))
+            )?;
+        } else {
+            let hline = "─".repeat(self.config.term_width - (self.panel_width + 1));
+            let hline = format!("{}{}{}", "─".repeat(self.panel_width), grid_char, hline);
+            writeln!(handle, "{}", self.colors.grid.paint(hline))?;
+        }
 
+        Ok(())
+    }
+
+    fn preprocess(&self, text: &str, cursor: &mut usize) -> String {
+        if self.config.tab_width > 0 {
+            expand_tabs(text, self.config.tab_width, cursor)
+        } else {
+            text.to_string()
+        }
+    }
+}
+
+impl<'a> Printer for InteractivePrinter<'a> {
+    fn print_header(&mut self, handle: &mut Write, file: InputFile) -> Result<()> {
         if !self.config.output_components.header() {
             return Ok(());
         }
 
         if self.config.output_components.grid() {
-            self.print_horizontal_line('┬')?;
+            self.print_horizontal_line(handle, '┬')?;
 
             write!(
-                self.handle,
+                handle,
                 "{}{}",
                 " ".repeat(self.panel_width),
                 self.colors
@@ -91,35 +202,89 @@ impl<'a> Printer<'a> {
                     .paint(if self.panel_width > 0 { "│ " } else { "" }),
             )?;
         } else {
-            write!(self.handle, "{}", " ".repeat(self.panel_width))?;
+            write!(handle, "{}", " ".repeat(self.panel_width))?;
         }
 
+        let (prefix, name) = match file {
+            InputFile::Ordinary(filename) => ("File: ", filename),
+            _ => ("", "STDIN"),
+        };
+
+        let mode = match self.content_type {
+            ContentType::BINARY => "   <BINARY>",
+            ContentType::UTF_16LE => "   <UTF-16LE>",
+            ContentType::UTF_16BE => "   <UTF-16BE>",
+            _ => "",
+        };
+
         writeln!(
-            self.handle,
-            "{}{}",
-            filename.map_or("", |_| "File: "),
-            self.colors.filename.paint(filename.unwrap_or("STDIN"))
+            handle,
+            "{}{}{}",
+            prefix,
+            self.colors.filename.paint(name),
+            mode
         )?;
 
         if self.config.output_components.grid() {
-            self.print_horizontal_line('┼')?;
+            if self.content_type.is_text() {
+                self.print_horizontal_line(handle, '┼')?;
+            } else {
+                self.print_horizontal_line(handle, '┴')?;
+            }
         }
 
         Ok(())
     }
 
-    pub fn print_footer(&mut self) -> Result<()> {
-        if self.config.output_components.grid() {
-            self.print_horizontal_line('┴')
+    fn print_footer(&mut self, handle: &mut Write) -> Result<()> {
+        if self.config.output_components.grid() && self.content_type.is_text() {
+            self.print_horizontal_line(handle, '┴')
         } else {
             Ok(())
         }
     }
 
-    pub fn print_line(&mut self, regions: &[(highlighting::Style, &str)]) -> Result<()> {
-        self.line_number += 1;
+    fn print_line(
+        &mut self,
+        out_of_range: bool,
+        handle: &mut Write,
+        line_number: usize,
+        line_buffer: &[u8],
+    ) -> Result<()> {
+        let mut line = match self.content_type {
+            ContentType::BINARY => {
+                return Ok(());
+            }
+            ContentType::UTF_16LE => UTF_16LE
+                .decode(&line_buffer, DecoderTrap::Strict)
+                .unwrap_or("Invalid UTF-16LE".into()),
+            ContentType::UTF_16BE => UTF_16BE
+                .decode(&line_buffer, DecoderTrap::Strict)
+                .unwrap_or("Invalid UTF-16BE".into()),
+            _ => String::from_utf8_lossy(&line_buffer).to_string(),
+        };
+
+        if self.config.show_nonprintable {
+            line = replace_nonprintable(&mut line, self.config.tab_width);
+        }
+
+        let regions = {
+            let highlighter = match self.highlighter {
+                Some(ref mut highlighter) => highlighter,
+                _ => {
+                    return Ok(());
+                }
+            };
+            highlighter.highlight(line.as_ref(), self.syntax_set)
+        };
+
+        if out_of_range {
+            return Ok(());
+        }
+
         let mut cursor: usize = 0;
         let mut cursor_max: usize = self.config.term_width;
+        let mut cursor_total: usize = 0;
         let mut panel_wrap: Option<String> = None;
 
         // Line decorations.
@@ -127,11 +292,11 @@ impl<'a> Printer<'a> {
             let decorations = self
                 .decorations
                 .iter()
-                .map(|ref d| d.generate(self.line_number, false, self))
+                .map(|ref d| d.generate(line_number, false, self))
                 .collect::<Vec<_>>();
 
             for deco in decorations {
-                write!(self.handle, "{} ", deco.text)?;
+                write!(handle, "{} ", deco.text)?;
                 cursor_max -= deco.width + 1;
             }
         }
@@ -140,35 +305,47 @@ impl<'a> Printer<'a> {
         if self.config.output_wrap == OutputWrap::None {
             let true_color = self.config.true_color;
             let colored_output = self.config.colored_output;
+            let italics = self.config.use_italic_text;
 
-            write!(
-                self.handle,
-                "{}",
-                regions
-                    .iter()
-                    .map(|&(style, text)| as_terminal_escaped(
-                        style,
-                        text,
-                        true_color,
-                        colored_output,
-                    ))
-                    .collect::<Vec<_>>()
-                    .join("")
-            )?;
+            for &(style, region) in regions.iter() {
+                let text = &*self.preprocess(region, &mut cursor_total);
+                write!(
+                    handle,
+                    "{}",
+                    as_terminal_escaped(style, &*text, true_color, colored_output, italics,)
+                )?;
+            }
+
+            if line.bytes().next_back() != Some(b'\n') {
+                write!(handle, "\n")?;
+            }
         } else {
             for &(style, region) in regions.iter() {
                 let mut ansi_iterator = AnsiCodeIterator::new(region);
-                let mut ansi_prefix = "";
+                let mut ansi_prefix: String = String::new();
                 for chunk in ansi_iterator {
                     match chunk {
                         // ANSI escape passthrough.
                         (text, true) => {
-                            ansi_prefix = text;
+                            if text.chars().last().map_or(false, |c| c == 'm') {
+                                ansi_prefix.push_str(text);
+                                if text == "\x1B[0m" {
+                                    self.ansi_prefix_sgr = "\x1B[0m".to_owned();
+                                } else {
+                                    self.ansi_prefix_sgr.push_str(text);
+                                }
+                            } else {
+                                ansi_prefix.push_str(text);
+                            }
                         }
 
                         // Regular text.
                         (text, false) => {
-                            let text = text.trim_right_matches(|c| c == '\r' || c == '\n');
+                            let text = self.preprocess(
+                                text.trim_right_matches(|c| c == '\r' || c == '\n'),
+                                &mut cursor_total,
+                            );
+
                             let mut chars = text.chars();
                             let mut remaining = text.chars().count();
 
@@ -181,13 +358,17 @@ impl<'a> Printer<'a> {
                                     cursor += remaining;
 
                                     write!(
-                                        self.handle,
+                                        handle,
                                         "{}",
                                         as_terminal_escaped(
                                             style,
-                                            &*format!("{}{}", ansi_prefix, text),
+                                            &*format!(
+                                                "{}{}{}",
+                                                self.ansi_prefix_sgr, ansi_prefix, text
+                                            ),
                                             self.config.true_color,
                                             self.config.colored_output,
+                                            self.config.use_italic_text
                                         )
                                     )?;
                                     break;
@@ -201,7 +382,7 @@ impl<'a> Printer<'a> {
                                             self.decorations
                                                 .iter()
                                                 .map(|ref d| d
-                                                    .generate(self.line_number, true, self)
+                                                    .generate(line_number, true, self)
                                                     .text)
                                                 .collect::<Vec<String>>()
                                                 .join(" ")
@@ -217,47 +398,37 @@ impl<'a> Printer<'a> {
                                 remaining -= available;
 
                                 write!(
-                                    self.handle,
+                                    handle,
                                     "{}\n{}",
                                     as_terminal_escaped(
                                         style,
-                                        &*format!("{}{}", ansi_prefix, text),
+                                        &*format!(
+                                            "{}{}{}",
+                                            self.ansi_prefix_sgr, ansi_prefix, text
+                                        ),
                                         self.config.true_color,
                                         self.config.colored_output,
+                                        self.config.use_italic_text
                                     ),
                                     panel_wrap.clone().unwrap()
                                 )?;
                             }
+
+                            // Clear the ANSI prefix buffer.
+                            ansi_prefix.clear();
                         }
                     }
                 }
             }
 
-            write!(self.handle, "\n")?;
-        }
-
-        Ok(())
-    }
-
-    fn print_horizontal_line(&mut self, grid_char: char) -> Result<()> {
-        if self.panel_width == 0 {
-            writeln!(
-                self.handle,
-                "{}",
-                self.colors.grid.paint("─".repeat(self.config.term_width))
-            )?;
-        } else {
-            let hline = "─".repeat(self.config.term_width - (self.panel_width + 1));
-            let hline = format!("{}{}{}", "─".repeat(self.panel_width), grid_char, hline);
-            writeln!(self.handle, "{}", self.colors.grid.paint(hline))?;
+            write!(handle, "\n")?;
         }
 
         Ok(())
     }
 }
 
-const GRID_COLOR: u8 = 238;
-const LINE_NUMBER_COLOR: u8 = 244;
+const DEFAULT_GUTTER_COLOR: u8 = 238;
 
 #[derive(Default)]
 pub struct Colors {
@@ -274,14 +445,20 @@ impl Colors {
         Colors::default()
     }
 
-    fn colored() -> Self {
+    fn colored(theme: &Theme, true_color: bool) -> Self {
+        let gutter_color = theme
+            .settings
+            .gutter_foreground
+            .map(|c| to_ansi_color(c, true_color))
+            .unwrap_or(Fixed(DEFAULT_GUTTER_COLOR));
+
         Colors {
-            grid: Fixed(GRID_COLOR).normal(),
-            filename: White.bold(),
+            grid: gutter_color.normal(),
+            filename: Style::new().bold(),
             git_added: Green.normal(),
             git_removed: Red.normal(),
             git_modified: Yellow.normal(),
-            line_number: Fixed(LINE_NUMBER_COLOR).normal(),
+            line_number: gutter_color.normal(),
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -9,7 +9,6 @@ use self::tempdir::TempDir;
 
 extern crate git2;
 use self::git2::build::CheckoutBuilder;
-use self::git2::Error;
 use self::git2::Repository;
 use self::git2::Signature;
 
@@ -39,10 +38,18 @@ impl BatTester {
         BatTester { temp_dir, exe }
     }
 
-    pub fn test_snapshot(&self, style: &str) {
+    pub fn test_snapshot(&self, name: &str, style: &str) {
         let output = Command::new(&self.exe)
             .current_dir(self.temp_dir.path())
-            .args(&["sample.rs", &format!("--style={}", style)])
+            .args(&[
+                "sample.rs",
+                "--no-config",
+                "--paging=never",
+                "--color=never",
+                "--decorations=always",
+                "--terminal-width=80",
+                &format!("--style={}", style),
+            ])
             .output()
             .expect("bat failed");
 
@@ -52,7 +59,7 @@ impl BatTester {
             .replace("tests/snapshots/", "");
 
         let mut expected = String::new();
-        let mut file = File::open(format!("tests/snapshots/output/{}.snapshot.txt", style))
+        let mut file = File::open(format!("tests/snapshots/output/{}.snapshot.txt", name))
             .expect("snapshot file missing");
         file.read_to_string(&mut expected)
             .expect("could not read snapshot file");
@@ -78,7 +85,7 @@ fn create_sample_directory() -> Result<TempDir, git2::Error> {
     let oid = index.write_tree()?;
     let signature = Signature::now("bat test runner", "bat@test.runner")?;
     let tree = repo.find_tree(oid)?;
-    repo.commit(
+    let _ = repo.commit(
         Some("HEAD"), //  point HEAD to our new commit
         &signature,   // author
         &signature,   // committer
