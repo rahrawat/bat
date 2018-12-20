@@ -13,7 +13,7 @@
   <a href="#installation">Installation</a> •
   <a href="#customization">Customization</a> •
   <a href="#project-goals-and-alternatives">Project goals, alternatives</a> •
-  Translation [<a href="https://github.com/chinanf-boy/bat-zh">中文</a>]
+  Translation [<a href="https://github.com/chinanf-boy/bat-zh">中文</a>][<a href="doc/README-ja.md">日本文</a>]
 </p>
 
 ### Syntax highlighting
@@ -109,6 +109,14 @@ from the official sources:
 
 ```bash
 pacman -S bat
+```
+
+### On Fedora
+
+On Fedora 29 and higher, you can install `bat` from the official package sources:
+
+```bash
+dnf install bat
 ```
 
 ### On Void Linux
@@ -212,7 +220,7 @@ binaries are also available: look for archives with `musl` in the file name.
 
 ### From source
 
-If you want to build `bat` from source, you need Rust 1.29 or
+If you want to build `bat` from source, you need Rust 1.30 or
 higher. You can then use `cargo` to build everything:
 
 ```bash
@@ -262,10 +270,8 @@ and theme. To add new syntax definitions, do the following.
 Create a folder with syntax definition files:
 
 ```bash
-BAT_CONFIG_DIR="$(bat cache --config-dir)"
-
-mkdir -p "$BAT_CONFIG_DIR/syntaxes"
-cd "$BAT_CONFIG_DIR/syntaxes"
+mkdir -p "$(bat cache --config-dir)/syntaxes"
+cd "$(bat cache --config-dir)/syntaxes"
 
 # Put new '.sublime-syntax' language definition files
 # in this folder (or its subdirectories), for example:
@@ -292,10 +298,8 @@ This works very similar to how we add new syntax definitions.
 
 First, create a folder with the new syntax highlighting themes:
 ```bash
-BAT_CONFIG_DIR="$(bat cache --config-dir)"
-
-mkdir -p "$BAT_CONFIG_DIR/themes"
-cd "$BAT_CONFIG_DIR/themes"
+mkdir -p "$(bat cache --config-dir)/themes"
+cd "$(bat cache --config-dir)/themes"
 
 # Download a theme in '.tmTheme' format, for example:
 git clone https://github.com/greggb/sublime-snazzy
@@ -322,7 +326,7 @@ export BAT_PAGER="less -RF"
 
 Instead of using environment variables, you can also use `bat`s [configuration file](https://github.com/sharkdp/bat#configuration-file) to configure the pager (`--pager` option).
 
-**Note**: By default, if the pager is set to `less` (any no command-line options are specified),
+**Note**: By default, if the pager is set to `less` (and no command-line options are specified),
 `bat` will pass the following command line
 options to the pager: `-R`/`--RAW-CONTROL-CHARS`, `-F`/`--quit-if-one-screen` and `-X`/`--no-init`.
 The first (`-R`) is needed to interpret ANSI colors correctly. The second option (`-F`) instructs
@@ -387,14 +391,14 @@ for `less` [from its homepage](http://www.greenwoodsoftware.com/less/download.ht
 Chocolatey](https://chocolatey.org/packages/Less). To use it, place the binary in a directory in
 your `PATH` or [define an environment variable](#using-a-different-pager).
 
-### Colours
+### Colors
 
-Windows 10 natively supports colours in both `conhost.exe` (Command Prompt) and PowerShell since
+Windows 10 natively supports colors in both `conhost.exe` (Command Prompt) and PowerShell since
 [v1511](https://en.wikipedia.org/wiki/Windows_10_version_history#Version_1511_(November_Update)), as
 well as in newer versions of bash. On earlier versions of Windows, you can use
 [Cmder](http://cmder.net/), which includes [ConEmu](https://conemu.github.io/).
 
-**Note:** The Git and MSYS versions of `less` do not correctly interpret colours on Windows. If you
+**Note:** The Git and MSYS versions of `less` do not correctly interpret colors on Windows. If you
 don’t have any other pagers installed, you can disable paging entirely by passing `--paging=never`
 or by setting `BAT_PAGER` to an empty string.
 

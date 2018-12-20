@@ -29,4 +29,8 @@ themes (`bat cache --clear`).
 The following files have been manually modified after converting from a `.tmLanguage` file:
 
 * `Dart.sublime-syntax` => removed `#regex.dart` include.
-* `INI.sublime-syntax` => added `.hgrc` and `hgrc` file types.
+* `INI.sublime-syntax` => added `.hgrc`, `hgrc`, and `desktop` file types.
+
+### Non-submodule additions
+
+* `Assembly (x86_64)` has been manually added from https://github.com/13xforever/x86-assembly-textmate-bundle due to `git clone` recursion problems
